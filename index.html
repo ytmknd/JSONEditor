@@ -72,6 +72,7 @@
   <input type="file" id="file" accept=".json,application/json,text/plain" class="hidden">
   <button id="save">保存</button>
   <button id="copy">コピー</button>
+  <button id="selAll" title="ドキュメント全体を選択">全選択</button>
   <span class="sep"></span>
   <button id="undo" title="Ctrl+Z">元に戻す</button>
   <button id="redo" title="Ctrl+Y">やり直し</button>
@@ -112,7 +113,8 @@
   const $ = id => document.getElementById(id);
   const treeEl = $('tree'), textEl = $('text'), statusEl = $('status');
 
-  let data = { name: "サンプル", version: 1, tags: ["a", "b"], nested: { ok: true, none: null, pi: 3.14 } };
+  let data = null;
+  let empty = true;                     // blank document (no JSON loaded yet)
   let fileName = 'data.json';
   const collapsed = new Set();          // key(path) of collapsed nodes
   let hits = [], hitIdx = -1;           // search results: [{path, inKey, inVal}]
@@ -125,23 +127,24 @@
   const isCont = v => v !== null && typeof v === 'object';
   const getIndent = () => { const v = $('indent').value; return v === 'tab' ? '\t' : Number(v); };
   const serialize = (v, indent = getIndent()) => JSON.stringify(v, null, indent);
+  const docText = indent => empty ? '' : serialize(data, indent);
   const getAt = path => path.reduce((o, k) => o[k], data);
 
   function setStatus(msg, isErr) { statusEl.textContent = msg || ''; statusEl.className = isErr ? 'err' : ''; }
 
   // ---------- history ----------
-  function snapshot() { return JSON.stringify(data); }
+  function snapshot() { return JSON.stringify({ e: empty, d: data }); }
   function commit(mutate) {
     undoStack.push(snapshot()); if (undoStack.length > 200) undoStack.shift();
     redoStack = [];
     mutate();
     afterChange();
   }
-  function restore(s) { data = JSON.parse(s); afterChange(); }
+  function restore(s) { const o = JSON.parse(s); empty = o.e; data = o.d; afterChange(); }
   function undo() { if (!undoStack.length) return; redoStack.push(snapshot()); restore(undoStack.pop()); }
   function redo() { if (!redoStack.length) return; undoStack.push(snapshot()); restore(redoStack.pop()); }
   function afterChange() {
-    textEl.value = serialize(data); textDirty = false;
+    textEl.value = docText(); textDirty = false;
     renderTree(); runSearch(true); updateButtons();
     setStatus('');
   }
@@ -162,6 +165,11 @@
 
   function renderTree() {
     treeEl.textContent = '';
+    if (empty) {
+      const d = document.createElement('div'); d.className = 'empty';
+      d.textContent = '空のドキュメントです。「開く」でファイルを読み込むか、「テキスト」タブにJSONを貼り付けてください。';
+      treeEl.appendChild(d); return;
+    }
     treeEl.appendChild(buildNode(data, [], null));
     const cur = treeEl.querySelector('.cur-row');
     if (cur) cur.scrollIntoView({ block: 'center' });
@@ -331,7 +339,7 @@
   function runSearch(keep) {
     const prevKey = keep && hits[hitIdx] ? pk(hits[hitIdx].path) : null;
     hits = []; hitMap.clear(); hitIdx = -1;
-    const re = makeMatcher();
+    const re = empty ? null : makeMatcher();
     if (re === null) { $('count').textContent = ''; renderTree(); return; }
     if (re === undefined) { $('count').textContent = ''; return; }
     if (statusEl.classList.contains('err') && statusEl.textContent.startsWith('正規表現')) setStatus('');
@@ -376,16 +384,18 @@
   }
   function applyText() { // textarea -> data
     if (!textDirty) return true;
-    const r = parseText(textEl.value);
+    const blank = textEl.value.trim() === '';
+    const r = blank ? { ok: true, value: null } : parseText(textEl.value);
     if (!r.ok) { setStatus('JSONエラー: ' + r.message, true); return false; }
     undoStack.push(snapshot()); redoStack = [];
-    data = r.value; textDirty = false;
+    data = r.value; empty = blank; textDirty = false;
     renderTree(); runSearch(false); updateButtons();
     setStatus('');
     return true;
   }
   textEl.addEventListener('input', () => {
     textDirty = true;
+    if (textEl.value.trim() === '') return setStatus('');
     const r = parseText(textEl.value);
     setStatus(r.ok ? 'OK: 有効なJSON' : 'JSONエラー: ' + r.message, !r.ok);
   });
@@ -402,11 +412,13 @@
   }
   $('format').onclick = () => {
     if (!applyText()) return;
+    if (empty) return setStatus('整形するJSONがありません');
     commit(() => { if ($('sortKeys').checked) data = sortDeep(data); });
   };
-  $('indent').onchange = () => { textEl.value = serialize(data); };
+  $('indent').onchange = () => { textEl.value = docText(); };
   $('minify').onclick = () => {
     if (!applyText()) return;
+    if (empty) return setStatus('圧縮するJSONがありません');
     textEl.value = serialize(data, 0); textDirty = false; showText();
     setStatus('圧縮しました(ツリーに戻ると整形されます)');
   };
@@ -418,11 +430,12 @@
     e.target.value = '';
     if (!r.ok) { setStatus(`${f.name}: JSONエラー: ${r.message}`, true); return; }
     undoStack.push(snapshot()); redoStack = [];
-    data = r.value; fileName = f.name; collapsed.clear();
+    data = r.value; empty = false; fileName = f.name; collapsed.clear();
     afterChange(); setStatus(`${f.name} を開きました`);
   };
   $('save').onclick = () => {
     if (!applyText()) return;
+    if (empty) return setStatus('保存するJSONがありません');
     const raw = view === 'text' ? textEl.value : serialize(data);
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([raw], { type: 'application/json' }));
@@ -430,8 +443,13 @@
   };
   $('copy').onclick = async () => {
     if (!applyText()) return;
+    if (empty) return setStatus('コピーするJSONがありません');
     try { await navigator.clipboard.writeText(serialize(data)); setStatus('コピーしました'); }
     catch { textEl.select(); document.execCommand('copy'); setStatus('コピーしました'); }
+  };
+  $('selAll').onclick = () => { // select the raw JSON; tree view switches to text view first
+    if (view === 'tree') { if (!applyText()) return; showText(); }
+    textEl.focus(); textEl.select();
   };
   $('undo').onclick = undo; $('redo').onclick = redo;
 
@@ -459,6 +477,7 @@
   });
 
   afterChange();
+  showText();
 })();
 </script>
 </body>
