@@ -39,9 +39,17 @@
   #status { padding: 4px 12px; font-size: 12px; color: var(--muted); border-bottom: 1px solid var(--border); min-height: 26px; }
   #status.err { color: var(--err); }
   main { flex: 1; min-height: 0; position: relative; }
-  #tree, #text { position: absolute; inset: 0; }
+  #tree, #textWrap { position: absolute; inset: 0; }
   #tree { overflow: auto; padding: 8px 12px 40px; font-family: ui-monospace, Consolas, "Cascadia Mono", monospace; font-size: 13px; }
-  #text { width: 100%; height: 100%; border: 0; padding: 12px; resize: none; background: var(--bg); color: var(--fg); font: 13px/1.5 ui-monospace, Consolas, "Cascadia Mono", monospace; tab-size: 2; outline: none; white-space: pre; }
+  /* Syntax highlighting: a <pre> paints the colored text under a transparent textarea. */
+  #text, #hl { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; border: 0; padding: 12px; font: 13px/1.5 ui-monospace, Consolas, "Cascadia Mono", monospace; tab-size: 2; white-space: pre; letter-spacing: 0; }
+  #text { resize: none; outline: none; background: transparent; color: transparent; caret-color: var(--fg); overflow: auto; }
+  #text::placeholder { color: var(--muted); }
+  #hl { overflow: hidden; pointer-events: none; color: var(--fg); background: var(--bg); }
+  #textWrap.plain #text { color: var(--fg); background: var(--bg); }
+  #textWrap.plain #hl { display: none; }
+  .tk { color: var(--key); } .ts { color: var(--str); } .tn { color: var(--num); } .tb { color: var(--bool); } .tz { color: var(--null); font-style: italic; }
+  .tp { color: var(--muted); }
   .hidden { display: none !important; }
   .row { display: flex; align-items: baseline; gap: 4px; padding: 1px 0; border-radius: 4px; white-space: nowrap; }
   .row:hover { background: var(--panel); }
@@ -105,7 +113,10 @@
 <div id="status"></div>
 <main>
   <div id="tree"></div>
-  <textarea id="text" class="hidden" spellcheck="false" placeholder="Paste JSON here" data-i18n-ph="textPh"></textarea>
+  <div id="textWrap" class="hidden">
+    <pre id="hl" aria-hidden="true"></pre>
+    <textarea id="text" spellcheck="false" placeholder="Paste JSON here" data-i18n-ph="textPh"></textarea>
+  </div>
 </main>
 
 <script>
@@ -155,6 +166,28 @@
   for (const el of document.querySelectorAll('[data-i18n-ph]')) el.placeholder = t(el.dataset.i18nPh);
   let reErr = false;                    // a regex error is currently shown in the status bar
   const treeEl = $('tree'), textEl = $('text'), statusEl = $('status');
+  const textWrap = $('textWrap'), hlEl = $('hl');
+
+  // Colorize the text view. Very large documents fall back to plain text to stay responsive.
+  const TOKEN = /("(?:\\.|[^"\\])*")(\s*:)?|\b(true|false)\b|\bnull\b|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|[{}\[\],:]/g;
+  function paintText() {
+    const src = textEl.value;
+    const plain = src.length > 1000000;
+    textWrap.classList.toggle('plain', plain);
+    if (plain) return;
+    let out = '', last = 0, m;
+    TOKEN.lastIndex = 0;
+    while ((m = TOKEN.exec(src))) {
+      out += esc(src.slice(last, m.index));
+      const cls = m[1] ? (m[2] ? 'tk' : 'ts') : m[3] ? 'tb' : m[0] === 'null' ? 'tz' : /^[-\d]/.test(m[0]) ? 'tn' : 'tp';
+      out += m[1] && m[2] ? `<span class="tk">${esc(m[1])}</span><span class="tp">${esc(m[2])}</span>` : `<span class="${cls}">${esc(m[0])}</span>`;
+      last = TOKEN.lastIndex;
+    }
+    hlEl.innerHTML = out + esc(src.slice(last)) + '\n';
+    syncScroll();
+  }
+  function syncScroll() { hlEl.scrollTop = textEl.scrollTop; hlEl.scrollLeft = textEl.scrollLeft; }
+  textEl.addEventListener('scroll', syncScroll);
 
   let data = null;
   let empty = true;                     // blank document (no JSON loaded yet)
@@ -187,7 +220,7 @@
   function undo() { if (!undoStack.length) return; redoStack.push(snapshot()); restore(undoStack.pop()); }
   function redo() { if (!redoStack.length) return; undoStack.push(snapshot()); restore(redoStack.pop()); }
   function afterChange() {
-    textEl.value = docText(); textDirty = false;
+    textEl.value = docText(); textDirty = false; paintText();
     renderTree(); runSearch(true); updateButtons();
     setStatus('');
   }
@@ -437,14 +470,14 @@
     return true;
   }
   textEl.addEventListener('input', () => {
-    textDirty = true;
+    textDirty = true; paintText();
     if (textEl.value.trim() === '') return setStatus('');
     const r = parseText(textEl.value);
     setStatus(r.ok ? t('validJson') : t('jsonErr', r.message), !r.ok);
   });
 
-  function showTree() { if (!applyText()) return; view = 'tree'; treeEl.classList.remove('hidden'); textEl.classList.add('hidden'); $('tabTree').classList.add('on'); $('tabText').classList.remove('on'); }
-  function showText() { view = 'text'; textEl.classList.remove('hidden'); treeEl.classList.add('hidden'); $('tabText').classList.add('on'); $('tabTree').classList.remove('on'); textEl.focus(); }
+  function showTree() { if (!applyText()) return; view = 'tree'; treeEl.classList.remove('hidden'); textWrap.classList.add('hidden'); $('tabTree').classList.add('on'); $('tabText').classList.remove('on'); }
+  function showText() { view = 'text'; textWrap.classList.remove('hidden'); treeEl.classList.add('hidden'); $('tabText').classList.add('on'); $('tabTree').classList.remove('on'); textEl.focus(); syncScroll(); }
   $('tabTree').onclick = showTree;
   $('tabText').onclick = showText;
 
@@ -458,11 +491,11 @@
     if (empty) return setStatus(t('noFmt'));
     commit(() => { if ($('sortKeys').checked) data = sortDeep(data); });
   };
-  $('indent').onchange = () => { textEl.value = docText(); };
+  $('indent').onchange = () => { textEl.value = docText(); paintText(); };
   $('minify').onclick = () => {
     if (!applyText()) return;
     if (empty) return setStatus(t('noMin'));
-    textEl.value = serialize(data, 0); textDirty = false; showText();
+    textEl.value = serialize(data, 0); textDirty = false; paintText(); showText();
     setStatus(t('minDone'));
   };
 
