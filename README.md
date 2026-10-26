@@ -34,3 +34,7 @@ git clone https://github.com/ytmknd/JSONEditor.git
 cd JSONEditor
 # open index.html
 ```
+
+## License
+
+[MIT](LICENSE)
