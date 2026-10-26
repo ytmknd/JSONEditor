@@ -46,8 +46,7 @@
   #text { resize: none; outline: none; background: transparent; color: transparent; caret-color: var(--fg); overflow: auto; }
   #text::placeholder { color: var(--muted); }
   #hl { overflow: hidden; pointer-events: none; color: var(--fg); background: var(--bg); }
-  #textWrap.plain #text { color: var(--fg); background: var(--bg); }
-  #textWrap.plain #hl { display: none; }
+  #hlc { display: block; will-change: transform; }
   .tk { color: var(--key); } .ts { color: var(--str); } .tn { color: var(--num); } .tb { color: var(--bool); } .tz { color: var(--null); font-style: italic; }
   .tp { color: var(--muted); }
   .hidden { display: none !important; }
@@ -114,7 +113,7 @@
 <main>
   <div id="tree"></div>
   <div id="textWrap" class="hidden">
-    <pre id="hl" aria-hidden="true"></pre>
+    <pre id="hl" aria-hidden="true"><code id="hlc"></code></pre>
     <textarea id="text" spellcheck="false" placeholder="Paste JSON here" data-i18n-ph="textPh"></textarea>
   </div>
 </main>
@@ -166,15 +165,24 @@
   for (const el of document.querySelectorAll('[data-i18n-ph]')) el.placeholder = t(el.dataset.i18nPh);
   let reErr = false;                    // a regex error is currently shown in the status bar
   const treeEl = $('tree'), textEl = $('text'), statusEl = $('status');
-  const textWrap = $('textWrap'), hlEl = $('hl');
+  const textWrap = $('textWrap');
 
-  // Colorize the text view. Very large documents fall back to plain text to stay responsive.
+  // Colorize the text view. Only the visible lines (plus a margin) are tokenized and painted, so
+  // document size barely matters. JSON strings cannot contain raw newlines, so lines tokenize independently.
+  // Very long lines (e.g. minified JSON) are cut to the visible column range.
   const TOKEN = /("(?:\\.|[^"\\])*")(\s*:)?|\b(true|false)\b|\bnull\b|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|[{}\[\],:]/g;
-  function paintText() {
-    const src = textEl.value;
-    const plain = src.length > 1000000;
-    textWrap.classList.toggle('plain', plain);
-    if (plain) return;
+  const OVERSCAN = 40, LONG_LINE = 2000;
+  const hlcEl = $('hlc');
+  let lines = [], linesStale = true, lineH = 19.5, charW = 7.8, rafId = 0;
+
+  function measureFont() {
+    const cs = getComputedStyle(textEl);
+    lineH = parseFloat(cs.lineHeight) || 19.5;
+    const ctx = document.createElement('canvas').getContext('2d');
+    ctx.font = `${cs.fontSize} ${cs.fontFamily}`;
+    charW = ctx.measureText('0'.repeat(100)).width / 100 || 7.8;
+  }
+  function colorize(src) {
     let out = '', last = 0, m;
     TOKEN.lastIndex = 0;
     while ((m = TOKEN.exec(src))) {
@@ -183,11 +191,28 @@
       out += m[1] && m[2] ? `<span class="tk">${esc(m[1])}</span><span class="tp">${esc(m[2])}</span>` : `<span class="${cls}">${esc(m[0])}</span>`;
       last = TOKEN.lastIndex;
     }
-    hlEl.innerHTML = out + esc(src.slice(last)) + '\n';
-    syncScroll();
+    return out + esc(src.slice(last));
   }
-  function syncScroll() { hlEl.scrollTop = textEl.scrollTop; hlEl.scrollLeft = textEl.scrollLeft; }
-  textEl.addEventListener('scroll', syncScroll);
+  function renderWindow() {
+    if (linesStale) { lines = textEl.value.split('\n'); linesStale = false; }
+    const st = textEl.scrollTop, sl = textEl.scrollLeft;
+    const first = Math.max(0, Math.floor(st / lineH) - OVERSCAN);
+    const last = Math.min(lines.length, Math.ceil((st + textEl.clientHeight) / lineH) + OVERSCAN);
+    const firstCol = Math.max(0, Math.floor(sl / charW) - 20), cols = Math.ceil(textEl.clientWidth / charW) + 40;
+    let out = '';
+    for (let i = first; i < last; i++) {
+      const ln = lines[i];
+      if (ln.length > LONG_LINE) {
+        const pad = firstCol ? `<span style="display:inline-block;width:${firstCol * charW}px"></span>` : '';
+        out += pad + colorize(ln.slice(firstCol, firstCol + cols)) + '\n';
+      } else out += colorize(ln) + '\n';
+    }
+    hlcEl.innerHTML = out;
+    hlcEl.style.transform = `translate(${-sl}px, ${first * lineH - st}px)`;
+  }
+  function paintText() { linesStale = true; renderWindow(); }
+  textEl.addEventListener('scroll', () => { if (!rafId) rafId = requestAnimationFrame(() => { rafId = 0; renderWindow(); }); });
+  addEventListener('resize', renderWindow);
 
   let data = null;
   let empty = true;                     // blank document (no JSON loaded yet)
@@ -471,13 +496,18 @@
   }
   textEl.addEventListener('input', () => {
     textDirty = true; paintText();
+    clearTimeout(validateTimer);
+    validateTimer = setTimeout(validateText, textEl.value.length > 200000 ? 400 : 0);
+  });
+  let validateTimer = 0;
+  function validateText() {
     if (textEl.value.trim() === '') return setStatus('');
     const r = parseText(textEl.value);
     setStatus(r.ok ? t('validJson') : t('jsonErr', r.message), !r.ok);
-  });
+  }
 
   function showTree() { if (!applyText()) return; view = 'tree'; treeEl.classList.remove('hidden'); textWrap.classList.add('hidden'); $('tabTree').classList.add('on'); $('tabText').classList.remove('on'); }
-  function showText() { view = 'text'; textWrap.classList.remove('hidden'); treeEl.classList.add('hidden'); $('tabText').classList.add('on'); $('tabTree').classList.remove('on'); textEl.focus(); syncScroll(); }
+  function showText() { view = 'text'; textWrap.classList.remove('hidden'); treeEl.classList.add('hidden'); $('tabText').classList.add('on'); $('tabTree').classList.remove('on'); textEl.focus(); measureFont(); renderWindow(); }
   $('tabTree').onclick = showTree;
   $('tabText').onclick = showText;
 
