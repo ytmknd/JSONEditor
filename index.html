@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ja">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -68,49 +68,92 @@
 <body>
 <header>
   <h1>JSON Editor</h1>
-  <button id="open">開く</button>
+  <button id="open" data-i18n="open">Open</button>
   <input type="file" id="file" class="hidden">
-  <button id="save">保存</button>
-  <button id="copy">コピー</button>
-  <button id="selAll" title="ドキュメント全体を選択">全選択</button>
+  <button id="save" data-i18n="save">Save</button>
+  <button id="copy" data-i18n="copy">Copy</button>
+  <button id="selAll" data-i18n="selAll" data-i18n-title="selAllT" title="Select the whole document">Select all</button>
   <span class="sep"></span>
-  <button id="undo" title="Ctrl+Z">元に戻す</button>
-  <button id="redo" title="Ctrl+Y">やり直し</button>
+  <button id="undo" title="Ctrl+Z" data-i18n="undo">Undo</button>
+  <button id="redo" title="Ctrl+Y" data-i18n="redo">Redo</button>
   <span class="sep"></span>
-  <select id="indent" title="インデント">
-    <option value="2">スペース2</option>
-    <option value="4">スペース4</option>
-    <option value="tab">タブ</option>
+  <select id="indent" title="Indent" data-i18n-title="indentT">
+    <option value="2" data-i18n="sp2">2 spaces</option>
+    <option value="4" data-i18n="sp4">4 spaces</option>
+    <option value="tab" data-i18n="tab">Tab</option>
   </select>
-  <button id="format">整形</button>
-  <button id="minify">圧縮</button>
-  <label class="chk"><input type="checkbox" id="sortKeys">キー順に並べる</label>
+  <button id="format" data-i18n="format">Format</button>
+  <button id="minify" data-i18n="minify">Minify</button>
+  <label class="chk"><input type="checkbox" id="sortKeys"><span data-i18n="sortKeys">Sort keys</span></label>
   <span class="sep"></span>
   <div class="tabs">
-    <button id="tabTree" class="on">ツリー</button>
-    <button id="tabText">テキスト</button>
+    <button id="tabTree" class="on" data-i18n="tabTree">Tree</button>
+    <button id="tabText" data-i18n="tabText">Text</button>
   </div>
   <span class="sep"></span>
   <div class="search">
-    <input type="search" id="q" placeholder="検索 (Enterで次へ)">
+    <input type="search" id="q" placeholder="Search (Enter for next)" data-i18n-ph="qPh">
     <button id="prev" title="Shift+Enter">▲</button>
     <button id="next" title="Enter">▼</button>
     <span id="count"></span>
-    <label class="chk"><input type="checkbox" id="optKey" checked>キー</label>
-    <label class="chk"><input type="checkbox" id="optVal" checked>値</label>
-    <label class="chk"><input type="checkbox" id="optCase">大小区別</label>
-    <label class="chk"><input type="checkbox" id="optRe">正規表現</label>
+    <label class="chk"><input type="checkbox" id="optKey" checked><span data-i18n="optKey">Keys</span></label>
+    <label class="chk"><input type="checkbox" id="optVal" checked><span data-i18n="optVal">Values</span></label>
+    <label class="chk"><input type="checkbox" id="optCase"><span data-i18n="optCase">Match case</span></label>
+    <label class="chk"><input type="checkbox" id="optRe"><span data-i18n="optRe">Regex</span></label>
   </div>
 </header>
 <div id="status"></div>
 <main>
   <div id="tree"></div>
-  <textarea id="text" class="hidden" spellcheck="false" placeholder="ここにJSONを貼り付け"></textarea>
+  <textarea id="text" class="hidden" spellcheck="false" placeholder="Paste JSON here" data-i18n-ph="textPh"></textarea>
 </main>
 
 <script>
 (() => {
   const $ = id => document.getElementById(id);
+
+  // ---------- i18n: Japanese for ja browsers, English otherwise ----------
+  const MESSAGES = {
+    en: {
+      open: 'Open', save: 'Save', copy: 'Copy', selAll: 'Select all', selAllT: 'Select the whole document',
+      undo: 'Undo', redo: 'Redo', indentT: 'Indent', sp2: '2 spaces', sp4: '4 spaces', tab: 'Tab',
+      format: 'Format', minify: 'Minify', sortKeys: 'Sort keys', tabTree: 'Tree', tabText: 'Text',
+      qPh: 'Search (Enter for next)', optKey: 'Keys', optVal: 'Values', optCase: 'Match case', optRe: 'Regex',
+      textPh: 'Paste JSON here',
+      emptyDoc: 'Empty document. Use "Open" to load a file, or paste JSON in the "Text" tab.',
+      renameKeyT: 'Double-click to rename key', collapsedN: n => `… ${n} ${n === 1 ? 'item' : 'items'}`,
+      add: '+ Add', toggleT: 'Click to toggle', editT: 'Click to edit', del: 'Delete',
+      keyExists: k => `Key "${k}" already exists`, badNumber: 'Not a valid number',
+      reErr: m => `Regex error: ${m}`, noHits: '0 hits',
+      pos: (l, c) => ` (line ${l}, col ${c})`, jsonErr: m => `JSON error: ${m}`, validJson: 'OK: valid JSON',
+      noFmt: 'No JSON to format', noMin: 'No JSON to minify', minDone: 'Minified (it will be formatted again when you go back to the tree)',
+      fileJsonErr: (f, m) => `${f}: JSON error: ${m}`, opened: f => `Opened ${f}`, saved: f => `Saved ${f}`,
+      filePrompt: 'File name (extension optional)', noSave: 'No JSON to save', noCopy: 'No JSON to copy', copied: 'Copied'
+    },
+    ja: {
+      open: '開く', save: '保存', copy: 'コピー', selAll: '全選択', selAllT: 'ドキュメント全体を選択',
+      undo: '元に戻す', redo: 'やり直し', indentT: 'インデント', sp2: 'スペース2', sp4: 'スペース4', tab: 'タブ',
+      format: '整形', minify: '圧縮', sortKeys: 'キー順に並べる', tabTree: 'ツリー', tabText: 'テキスト',
+      qPh: '検索 (Enterで次へ)', optKey: 'キー', optVal: '値', optCase: '大小区別', optRe: '正規表現',
+      textPh: 'ここにJSONを貼り付け',
+      emptyDoc: '空のドキュメントです。「開く」でファイルを読み込むか、「テキスト」タブにJSONを貼り付けてください。',
+      renameKeyT: 'ダブルクリックでキー名を変更', collapsedN: n => `… ${n}件`,
+      add: '＋追加', toggleT: 'クリックで切替', editT: 'クリックで編集', del: '削除',
+      keyExists: k => `キー "${k}" は既に存在します`, badNumber: '数値として解釈できません',
+      reErr: m => `正規表現エラー: ${m}`, noHits: '0件',
+      pos: (l, c) => `(行 ${l}, 列 ${c})`, jsonErr: m => `JSONエラー: ${m}`, validJson: 'OK: 有効なJSON',
+      noFmt: '整形するJSONがありません', noMin: '圧縮するJSONがありません', minDone: '圧縮しました(ツリーに戻ると整形されます)',
+      fileJsonErr: (f, m) => `${f}: JSONエラー: ${m}`, opened: f => `${f} を開きました`, saved: f => `${f} を保存しました`,
+      filePrompt: 'ファイル名(拡張子なしも可)', noSave: '保存するJSONがありません', noCopy: 'コピーするJSONがありません', copied: 'コピーしました'
+    }
+  };
+  const lang = /^ja\b/i.test(navigator.language || '') ? 'ja' : 'en';
+  const t = (key, ...args) => { const m = MESSAGES[lang][key]; return typeof m === 'function' ? m(...args) : m; };
+  document.documentElement.lang = lang;
+  for (const el of document.querySelectorAll('[data-i18n]')) el.textContent = t(el.dataset.i18n);
+  for (const el of document.querySelectorAll('[data-i18n-title]')) el.title = t(el.dataset.i18nTitle);
+  for (const el of document.querySelectorAll('[data-i18n-ph]')) el.placeholder = t(el.dataset.i18nPh);
+  let reErr = false;                    // a regex error is currently shown in the status bar
   const treeEl = $('tree'), textEl = $('text'), statusEl = $('status');
 
   let data = null;
@@ -167,7 +210,7 @@
     treeEl.textContent = '';
     if (empty) {
       const d = document.createElement('div'); d.className = 'empty';
-      d.textContent = '空のドキュメントです。「開く」でファイルを読み込むか、「テキスト」タブにJSONを貼り付けてください。';
+      d.textContent = t('emptyDoc');
       treeEl.appendChild(d); return;
     }
     treeEl.appendChild(buildNode(data, [], null));
@@ -193,7 +236,7 @@
     if (key !== null) {
       const k = document.createElement('span'); k.className = 'k';
       k.innerHTML = parentIsArr ? esc(String(key)) : hl(String(key), hm && hm.key, hits[hitIdx] && pk(hits[hitIdx].path) === id);
-      if (!parentIsArr) { k.title = 'ダブルクリックでキー名を変更'; k.ondblclick = () => editKey(k, path); }
+      if (!parentIsArr) { k.title = t('renameKeyT'); k.ondblclick = () => editKey(k, path); }
       else k.style.color = 'var(--muted)';
       row.appendChild(k);
       const c = document.createElement('span'); c.className = 'colon'; c.textContent = ':'; row.appendChild(c);
@@ -208,9 +251,9 @@
       tog.textContent = isCol ? '▶' : '▼';
       tog.onclick = () => { isCol ? collapsed.delete(id) : collapsed.add(id); renderTree(); };
       const open = document.createElement('span'); open.className = 'sum';
-      open.textContent = (arr ? '[' : '{') + (isCol ? ` … ${keys.length}件 ${arr ? ']' : '}'}` : (keys.length ? '' : arr ? ']' : '}'));
+      open.textContent = (arr ? '[' : '{') + (isCol ? ` ${t('collapsedN', keys.length)} ${arr ? ']' : '}'}` : (keys.length ? '' : arr ? ']' : '}'));
       row.appendChild(open);
-      const add = document.createElement('button'); add.textContent = '＋追加'; add.onclick = () => addChild(path);
+      const add = document.createElement('button'); add.textContent = t('add'); add.onclick = () => addChild(path);
       acts.appendChild(add);
     } else {
       tog.textContent = '';
@@ -220,8 +263,8 @@
       const isCur = hits[hitIdx] && pk(hits[hitIdx].path) === id;
       if (t === 'string') span.innerHTML = '"' + hl(v, hm && hm.val, isCur) + '"';
       else span.innerHTML = hl(valText(v), hm && hm.val, isCur);
-      if (t === 'boolean') { span.title = 'クリックで切替'; span.onclick = () => commit(() => setAt(path, !v)); }
-      else if (t !== 'null') { span.title = 'クリックで編集'; span.onclick = () => editValue(span, path, v); }
+      if (t === 'boolean') { span.title = t('toggleT'); span.onclick = () => commit(() => setAt(path, !v)); }
+      else if (t !== 'null') { span.title = t('editT'); span.onclick = () => editValue(span, path, v); }
       row.appendChild(span);
     }
 
@@ -234,7 +277,7 @@
     sel.onchange = () => commit(() => setAt(path, convert(v, sel.value)));
     acts.appendChild(sel);
     if (path.length) {
-      const del = document.createElement('button'); del.textContent = '✕'; del.title = '削除';
+      const del = document.createElement('button'); del.textContent = '✕'; del.title = t('del');
       del.onclick = () => commit(() => removeAt(path));
       acts.appendChild(del);
     }
@@ -301,7 +344,7 @@
     const parent = getAt(path.slice(0, -1)), old = String(path[path.length - 1]);
     inlineInput(el, old, nv => {
       if (nv === old) return renderTree();
-      if (nv in parent) { setStatus(`キー "${nv}" は既に存在します`, true); return renderTree(); }
+      if (nv in parent) { setStatus(t('keyExists', nv), true); return renderTree(); }
       commit(() => { // rename while preserving order
         const entries = Object.entries(parent).map(([k, v]) => [k === old ? nv : k, v]);
         for (const k of Object.keys(parent)) delete parent[k];
@@ -315,7 +358,7 @@
     inlineInput(el, String(v), nv => {
       if (isNum) {
         const n = Number(nv);
-        if (nv.trim() === '' || !Number.isFinite(n)) { setStatus('数値として解釈できません', true); return renderTree(); }
+        if (nv.trim() === '' || !Number.isFinite(n)) { setStatus(t('badNumber'), true); return renderTree(); }
         commit(() => setAt(path, n));
       } else commit(() => setAt(path, nv));
     });
@@ -328,7 +371,7 @@
     const flags = 'g' + ($('optCase').checked ? '' : 'i');
     try {
       return new RegExp($('optRe').checked ? q : q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), flags);
-    } catch (e) { setStatus('正規表現エラー: ' + e.message, true); return undefined; }
+    } catch (e) { reErr = true; setStatus(t('reErr', e.message), true); return undefined; }
   }
   function findRanges(text, re) {
     const out = []; re.lastIndex = 0; let m;
@@ -339,10 +382,10 @@
   function runSearch(keep) {
     const prevKey = keep && hits[hitIdx] ? pk(hits[hitIdx].path) : null;
     hits = []; hitMap.clear(); hitIdx = -1;
+    if (reErr) { reErr = false; setStatus(''); }
     const re = empty ? null : makeMatcher();
     if (re === null) { $('count').textContent = ''; renderTree(); return; }
     if (re === undefined) { $('count').textContent = ''; return; }
-    if (statusEl.classList.contains('err') && statusEl.textContent.startsWith('正規表現')) setStatus('');
     const useK = $('optKey').checked, useV = $('optVal').checked;
     (function walk(v, path) {
       const entry = {};
@@ -356,7 +399,7 @@
       hitIdx = Math.max(0, prevKey ? hits.findIndex(h => pk(h.path) === prevKey) : 0);
       revealHit();
     }
-    $('count').textContent = $('q').value ? (hits.length ? `${hitIdx + 1} / ${hits.length}` : '0件') : '';
+    $('count').textContent = $('q').value ? (hits.length ? `${hitIdx + 1} / ${hits.length}` : t('noHits')) : '';
     renderTree();
   }
   function revealHit() { // expand ancestors of current hit
@@ -378,7 +421,7 @@
     catch (e) {
       let msg = e.message;
       const m = /position (\d+)/.exec(msg);
-      if (m) { const pos = +m[1], before = src.slice(0, pos).split('\n'); msg += `(行 ${before.length}, 列 ${before[before.length - 1].length + 1})`; }
+      if (m) { const pos = +m[1], before = src.slice(0, pos).split('\n'); msg += t('pos', before.length, before[before.length - 1].length + 1); }
       return { ok: false, message: msg };
     }
   }
@@ -386,7 +429,7 @@
     if (!textDirty) return true;
     const blank = textEl.value.trim() === '';
     const r = blank ? { ok: true, value: null } : parseText(textEl.value);
-    if (!r.ok) { setStatus('JSONエラー: ' + r.message, true); return false; }
+    if (!r.ok) { setStatus(t('jsonErr', r.message), true); return false; }
     undoStack.push(snapshot()); redoStack = [];
     data = r.value; empty = blank; textDirty = false;
     renderTree(); runSearch(false); updateButtons();
@@ -397,7 +440,7 @@
     textDirty = true;
     if (textEl.value.trim() === '') return setStatus('');
     const r = parseText(textEl.value);
-    setStatus(r.ok ? 'OK: 有効なJSON' : 'JSONエラー: ' + r.message, !r.ok);
+    setStatus(r.ok ? t('validJson') : t('jsonErr', r.message), !r.ok);
   });
 
   function showTree() { if (!applyText()) return; view = 'tree'; treeEl.classList.remove('hidden'); textEl.classList.add('hidden'); $('tabTree').classList.add('on'); $('tabText').classList.remove('on'); }
@@ -412,15 +455,15 @@
   }
   $('format').onclick = () => {
     if (!applyText()) return;
-    if (empty) return setStatus('整形するJSONがありません');
+    if (empty) return setStatus(t('noFmt'));
     commit(() => { if ($('sortKeys').checked) data = sortDeep(data); });
   };
   $('indent').onchange = () => { textEl.value = docText(); };
   $('minify').onclick = () => {
     if (!applyText()) return;
-    if (empty) return setStatus('圧縮するJSONがありません');
+    if (empty) return setStatus(t('noMin'));
     textEl.value = serialize(data, 0); textDirty = false; showText();
-    setStatus('圧縮しました(ツリーに戻ると整形されます)');
+    setStatus(t('minDone'));
   };
 
   $('open').onclick = () => $('file').click();
@@ -428,10 +471,10 @@
     const f = e.target.files[0]; if (!f) return;
     const r = parseText(await f.text());
     e.target.value = '';
-    if (!r.ok) { setStatus(`${f.name}: JSONエラー: ${r.message}`, true); return; }
+    if (!r.ok) { setStatus(t('fileJsonErr', f.name, r.message), true); return; }
     undoStack.push(snapshot()); redoStack = [];
     data = r.value; empty = false; fileName = f.name; collapsed.clear();
-    afterChange(); setStatus(`${f.name} を開きました`);
+    afterChange(); setStatus(t('opened', f.name));
   };
   // Save under any name (extensionless included): native picker where available, else prompt + download.
   async function saveFile(raw) {
@@ -439,10 +482,10 @@
       try {
         const h = await showSaveFilePicker({ suggestedName: fileName });
         const w = await h.createWritable(); await w.write(raw); await w.close();
-        fileName = h.name; setStatus(`${h.name} を保存しました`); return;
+        fileName = h.name; setStatus(t('saved', h.name)); return;
       } catch (e) { if (e.name === 'AbortError') return; }
     }
-    const name = prompt('ファイル名(拡張子なしも可)', fileName);
+    const name = prompt(t('filePrompt'), fileName);
     if (!name || !name.trim()) return;
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([raw], { type: name.includes('.') ? 'application/json' : 'application/octet-stream' }));
@@ -450,15 +493,15 @@
   }
   $('save').onclick = () => {
     if (!applyText()) return;
-    if (empty) return setStatus('保存するJSONがありません');
+    if (empty) return setStatus(t('noSave'));
     const raw = view === 'text' ? textEl.value : serialize(data);
     saveFile(raw);
   };
   $('copy').onclick = async () => {
     if (!applyText()) return;
-    if (empty) return setStatus('コピーするJSONがありません');
-    try { await navigator.clipboard.writeText(serialize(data)); setStatus('コピーしました'); }
-    catch { textEl.select(); document.execCommand('copy'); setStatus('コピーしました'); }
+    if (empty) return setStatus(t('noCopy'));
+    try { await navigator.clipboard.writeText(serialize(data)); setStatus(t('copied')); }
+    catch { textEl.select(); document.execCommand('copy'); setStatus(t('copied')); }
   };
   $('selAll').onclick = () => { // select the raw JSON; tree view switches to text view first
     if (view === 'tree') { if (!applyText()) return; showText(); }
