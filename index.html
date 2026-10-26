@@ -1,0 +1,465 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JSON Editor</title>
+<style>
+  :root {
+    --bg: #ffffff; --fg: #1f2328; --muted: #6b7280; --border: #d0d7de; --panel: #f6f8fa;
+    --accent: #2563eb; --hit: #fde68a; --cur: #fb923c; --err: #dc2626;
+    --key: #7c3aed; --str: #15803d; --num: #b45309; --bool: #0369a1; --null: #6b7280;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0d1117; --fg: #e6edf3; --muted: #8b949e; --border: #30363d; --panel: #161b22;
+      --accent: #58a6ff; --hit: #5b4a00; --cur: #9a4b00; --err: #f85149;
+      --key: #d2a8ff; --str: #7ee787; --num: #ffa657; --bool: #79c0ff; --null: #8b949e;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--bg); color: var(--fg); font: 14px/1.5 system-ui, "Segoe UI", "Yu Gothic UI", sans-serif; display: flex; flex-direction: column; }
+  header { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 12px; background: var(--panel); border-bottom: 1px solid var(--border); }
+  header h1 { font-size: 15px; margin: 0 8px 0 0; }
+  button, select, input[type=search], input[type=text], input[type=number] { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 3px 10px; }
+  button { cursor: pointer; }
+  button:hover:not(:disabled) { border-color: var(--accent); }
+  button:disabled { opacity: .4; cursor: default; }
+  .sep { width: 1px; align-self: stretch; background: var(--border); margin: 0 4px; }
+  .search { display: flex; gap: 4px; align-items: center; }
+  .search input[type=search] { width: 220px; }
+  #count { color: var(--muted); min-width: 64px; font-variant-numeric: tabular-nums; }
+  label.chk { display: inline-flex; gap: 4px; align-items: center; color: var(--muted); }
+  .tabs { display: flex; gap: 0; }
+  .tabs button { border-radius: 0; }
+  .tabs button:first-child { border-radius: 6px 0 0 6px; }
+  .tabs button:last-child { border-radius: 0 6px 6px 0; margin-left: -1px; }
+  .tabs button.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+  #status { padding: 4px 12px; font-size: 12px; color: var(--muted); border-bottom: 1px solid var(--border); min-height: 26px; }
+  #status.err { color: var(--err); }
+  main { flex: 1; min-height: 0; position: relative; }
+  #tree, #text { position: absolute; inset: 0; }
+  #tree { overflow: auto; padding: 8px 12px 40px; font-family: ui-monospace, Consolas, "Cascadia Mono", monospace; font-size: 13px; }
+  #text { width: 100%; height: 100%; border: 0; padding: 12px; resize: none; background: var(--bg); color: var(--fg); font: 13px/1.5 ui-monospace, Consolas, "Cascadia Mono", monospace; tab-size: 2; outline: none; white-space: pre; }
+  .hidden { display: none !important; }
+  .row { display: flex; align-items: baseline; gap: 4px; padding: 1px 0; border-radius: 4px; white-space: nowrap; }
+  .row:hover { background: var(--panel); }
+  .row .acts { visibility: hidden; margin-left: 8px; display: inline-flex; gap: 2px; }
+  .row:hover .acts, .row:focus-within .acts { visibility: visible; }
+  .acts button, .acts select { padding: 0 6px; font-size: 11px; line-height: 18px; }
+  .children { margin-left: 18px; padding-left: 10px; border-left: 1px dotted var(--border); }
+  .tog { width: 14px; text-align: center; cursor: pointer; color: var(--muted); user-select: none; flex: none; }
+  .k { color: var(--key); cursor: text; }
+  .colon { color: var(--muted); }
+  .v { cursor: text; }
+  .v.string { color: var(--str); }
+  .v.number { color: var(--num); }
+  .v.boolean { color: var(--bool); cursor: pointer; }
+  .v.null { color: var(--null); font-style: italic; }
+  .sum { color: var(--muted); }
+  mark { background: var(--hit); color: inherit; border-radius: 2px; }
+  mark.cur { background: var(--cur); }
+  .row.cur-row { outline: 1px solid var(--cur); }
+  .edit { font-family: inherit; font-size: inherit; padding: 0 4px; min-width: 60px; }
+  .empty { color: var(--muted); padding: 24px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>JSON Editor</h1>
+  <button id="open">開く</button>
+  <input type="file" id="file" accept=".json,application/json,text/plain" class="hidden">
+  <button id="save">保存</button>
+  <button id="copy">コピー</button>
+  <span class="sep"></span>
+  <button id="undo" title="Ctrl+Z">元に戻す</button>
+  <button id="redo" title="Ctrl+Y">やり直し</button>
+  <span class="sep"></span>
+  <select id="indent" title="インデント">
+    <option value="2">スペース2</option>
+    <option value="4">スペース4</option>
+    <option value="tab">タブ</option>
+  </select>
+  <button id="format">整形</button>
+  <button id="minify">圧縮</button>
+  <label class="chk"><input type="checkbox" id="sortKeys">キー順に並べる</label>
+  <span class="sep"></span>
+  <div class="tabs">
+    <button id="tabTree" class="on">ツリー</button>
+    <button id="tabText">テキスト</button>
+  </div>
+  <span class="sep"></span>
+  <div class="search">
+    <input type="search" id="q" placeholder="検索 (Enterで次へ)">
+    <button id="prev" title="Shift+Enter">▲</button>
+    <button id="next" title="Enter">▼</button>
+    <span id="count"></span>
+    <label class="chk"><input type="checkbox" id="optKey" checked>キー</label>
+    <label class="chk"><input type="checkbox" id="optVal" checked>値</label>
+    <label class="chk"><input type="checkbox" id="optCase">大小区別</label>
+    <label class="chk"><input type="checkbox" id="optRe">正規表現</label>
+  </div>
+</header>
+<div id="status"></div>
+<main>
+  <div id="tree"></div>
+  <textarea id="text" class="hidden" spellcheck="false" placeholder="ここにJSONを貼り付け"></textarea>
+</main>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const treeEl = $('tree'), textEl = $('text'), statusEl = $('status');
+
+  let data = { name: "サンプル", version: 1, tags: ["a", "b"], nested: { ok: true, none: null, pi: 3.14 } };
+  let fileName = 'data.json';
+  const collapsed = new Set();          // key(path) of collapsed nodes
+  let hits = [], hitIdx = -1;           // search results: [{path, inKey, inVal}]
+  let undoStack = [], redoStack = [];
+  let view = 'tree';
+  let textDirty = false;
+
+  const pk = p => JSON.stringify(p);
+  const typeOf = v => v === null ? 'null' : Array.isArray(v) ? 'array' : typeof v;
+  const isCont = v => v !== null && typeof v === 'object';
+  const getIndent = () => { const v = $('indent').value; return v === 'tab' ? '\t' : Number(v); };
+  const serialize = (v, indent = getIndent()) => JSON.stringify(v, null, indent);
+  const getAt = path => path.reduce((o, k) => o[k], data);
+
+  function setStatus(msg, isErr) { statusEl.textContent = msg || ''; statusEl.className = isErr ? 'err' : ''; }
+
+  // ---------- history ----------
+  function snapshot() { return JSON.stringify(data); }
+  function commit(mutate) {
+    undoStack.push(snapshot()); if (undoStack.length > 200) undoStack.shift();
+    redoStack = [];
+    mutate();
+    afterChange();
+  }
+  function restore(s) { data = JSON.parse(s); afterChange(); }
+  function undo() { if (!undoStack.length) return; redoStack.push(snapshot()); restore(undoStack.pop()); }
+  function redo() { if (!redoStack.length) return; undoStack.push(snapshot()); restore(redoStack.pop()); }
+  function afterChange() {
+    textEl.value = serialize(data); textDirty = false;
+    renderTree(); runSearch(true); updateButtons();
+    setStatus('');
+  }
+  function updateButtons() { $('undo').disabled = !undoStack.length; $('redo').disabled = !redoStack.length; }
+
+  // ---------- tree ----------
+  function esc(s) { return s.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c])); }
+
+  // Returns HTML with <mark> around the match ranges for this text.
+  function hl(text, ranges, cls) {
+    if (!ranges || !ranges.length) return esc(text);
+    let out = '', last = 0;
+    for (const [s, e] of ranges) { out += esc(text.slice(last, s)) + `<mark${cls ? ' class="cur"' : ''}>` + esc(text.slice(s, e)) + '</mark>'; last = e; }
+    return out + esc(text.slice(last));
+  }
+
+  const hitMap = new Map(); // pk(path) -> {key:[ranges], val:[ranges]}
+
+  function renderTree() {
+    treeEl.textContent = '';
+    treeEl.appendChild(buildNode(data, [], null));
+    const cur = treeEl.querySelector('.cur-row');
+    if (cur) cur.scrollIntoView({ block: 'center' });
+  }
+
+  function valText(v) { return typeof v === 'string' ? v : String(v); }
+
+  function buildNode(v, path, key) {
+    const wrap = document.createElement('div');
+    const row = document.createElement('div');
+    row.className = 'row';
+    const id = pk(path);
+    row.dataset.path = id;
+    const hm = hitMap.get(id);
+    if (hitIdx >= 0 && hits[hitIdx] && pk(hits[hitIdx].path) === id) row.classList.add('cur-row');
+    const parentIsArr = path.length && Array.isArray(getAt(path.slice(0, -1)));
+
+    const tog = document.createElement('span'); tog.className = 'tog';
+    row.appendChild(tog);
+
+    if (key !== null) {
+      const k = document.createElement('span'); k.className = 'k';
+      k.innerHTML = parentIsArr ? esc(String(key)) : hl(String(key), hm && hm.key, hits[hitIdx] && pk(hits[hitIdx].path) === id);
+      if (!parentIsArr) { k.title = 'ダブルクリックでキー名を変更'; k.ondblclick = () => editKey(k, path); }
+      else k.style.color = 'var(--muted)';
+      row.appendChild(k);
+      const c = document.createElement('span'); c.className = 'colon'; c.textContent = ':'; row.appendChild(c);
+    }
+
+    const acts = document.createElement('span'); acts.className = 'acts';
+
+    if (isCont(v)) {
+      const arr = Array.isArray(v);
+      const keys = Object.keys(v);
+      const isCol = collapsed.has(id);
+      tog.textContent = isCol ? '▶' : '▼';
+      tog.onclick = () => { isCol ? collapsed.delete(id) : collapsed.add(id); renderTree(); };
+      const open = document.createElement('span'); open.className = 'sum';
+      open.textContent = (arr ? '[' : '{') + (isCol ? ` … ${keys.length}件 ${arr ? ']' : '}'}` : (keys.length ? '' : arr ? ']' : '}'));
+      row.appendChild(open);
+      const add = document.createElement('button'); add.textContent = '＋追加'; add.onclick = () => addChild(path);
+      acts.appendChild(add);
+    } else {
+      tog.textContent = '';
+      const span = document.createElement('span');
+      const t = typeOf(v);
+      span.className = 'v ' + t;
+      const isCur = hits[hitIdx] && pk(hits[hitIdx].path) === id;
+      if (t === 'string') span.innerHTML = '"' + hl(v, hm && hm.val, isCur) + '"';
+      else span.innerHTML = hl(valText(v), hm && hm.val, isCur);
+      if (t === 'boolean') { span.title = 'クリックで切替'; span.onclick = () => commit(() => setAt(path, !v)); }
+      else if (t !== 'null') { span.title = 'クリックで編集'; span.onclick = () => editValue(span, path, v); }
+      row.appendChild(span);
+    }
+
+    // type selector
+    const sel = document.createElement('select');
+    for (const t of ['string', 'number', 'boolean', 'null', 'object', 'array']) {
+      const o = document.createElement('option'); o.value = t; o.textContent = t; sel.appendChild(o);
+    }
+    sel.value = typeOf(v) === 'object' ? 'object' : typeOf(v);
+    sel.onchange = () => commit(() => setAt(path, convert(v, sel.value)));
+    acts.appendChild(sel);
+    if (path.length) {
+      const del = document.createElement('button'); del.textContent = '✕'; del.title = '削除';
+      del.onclick = () => commit(() => removeAt(path));
+      acts.appendChild(del);
+    }
+    row.appendChild(acts);
+    wrap.appendChild(row);
+
+    if (isCont(v)) {
+      const keys = Object.keys(v);
+      if (!collapsed.has(id) && keys.length) {
+        const ch = document.createElement('div'); ch.className = 'children';
+        for (const k of keys) ch.appendChild(buildNode(v[k], path.concat(Array.isArray(v) ? Number(k) : k), Array.isArray(v) ? Number(k) : k));
+        wrap.appendChild(ch);
+        const close = document.createElement('div'); close.className = 'sum';
+        close.style.paddingLeft = '18px'; close.textContent = Array.isArray(v) ? ']' : '}';
+        wrap.appendChild(close);
+      }
+    }
+    return wrap;
+  }
+
+  function convert(v, t) {
+    const s = isCont(v) ? '' : String(v ?? '');
+    switch (t) {
+      case 'string': return isCont(v) ? serialize(v, 0) : s === 'null' ? '' : s;
+      case 'number': { const n = Number(s); return Number.isFinite(n) && s.trim() !== '' ? n : 0; }
+      case 'boolean': return s === 'true';
+      case 'null': return null;
+      case 'object': return {};
+      case 'array': return [];
+    }
+  }
+
+  function setAt(path, val) {
+    if (!path.length) { data = val; return; }
+    getAt(path.slice(0, -1))[path[path.length - 1]] = val;
+  }
+  function removeAt(path) {
+    const parent = getAt(path.slice(0, -1)), k = path[path.length - 1];
+    Array.isArray(parent) ? parent.splice(k, 1) : delete parent[k];
+  }
+  function addChild(path) {
+    const c = getAt(path);
+    if (Array.isArray(c)) { commit(() => c.push('')); collapsed.delete(pk(path)); renderTree(); return; }
+    let name = 'key', i = 1;
+    while (name in c) name = 'key' + (++i);
+    commit(() => { c[name] = ''; });
+    collapsed.delete(pk(path)); renderTree();
+    const row = [...treeEl.querySelectorAll('.row')].find(r => r.dataset.path === pk(path.concat(name)));
+    if (row) editKey(row.querySelector('.k'), path.concat(name));
+  }
+
+  function inlineInput(el, initial, onDone, type = 'text') {
+    const inp = document.createElement('input');
+    inp.type = type; inp.value = initial; inp.className = 'edit';
+    inp.style.width = Math.max(80, initial.length * 8 + 30) + 'px';
+    el.replaceWith(inp); inp.focus(); inp.select();
+    let done = false;
+    const finish = ok => { if (done) return; done = true; ok ? onDone(inp.value) : renderTree(); };
+    inp.onkeydown = e => { if (e.key === 'Enter') finish(true); else if (e.key === 'Escape') finish(false); e.stopPropagation(); };
+    inp.onblur = () => finish(true);
+  }
+
+  function editKey(el, path) {
+    const parent = getAt(path.slice(0, -1)), old = String(path[path.length - 1]);
+    inlineInput(el, old, nv => {
+      if (nv === old) return renderTree();
+      if (nv in parent) { setStatus(`キー "${nv}" は既に存在します`, true); return renderTree(); }
+      commit(() => { // rename while preserving order
+        const entries = Object.entries(parent).map(([k, v]) => [k === old ? nv : k, v]);
+        for (const k of Object.keys(parent)) delete parent[k];
+        for (const [k, v] of entries) parent[k] = v;
+      });
+    });
+  }
+
+  function editValue(el, path, v) {
+    const isNum = typeof v === 'number';
+    inlineInput(el, String(v), nv => {
+      if (isNum) {
+        const n = Number(nv);
+        if (nv.trim() === '' || !Number.isFinite(n)) { setStatus('数値として解釈できません', true); return renderTree(); }
+        commit(() => setAt(path, n));
+      } else commit(() => setAt(path, nv));
+    });
+  }
+
+  // ---------- search ----------
+  function makeMatcher() {
+    const q = $('q').value;
+    if (!q) return null;
+    const flags = 'g' + ($('optCase').checked ? '' : 'i');
+    try {
+      return new RegExp($('optRe').checked ? q : q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), flags);
+    } catch (e) { setStatus('正規表現エラー: ' + e.message, true); return undefined; }
+  }
+  function findRanges(text, re) {
+    const out = []; re.lastIndex = 0; let m;
+    while ((m = re.exec(text))) { if (m[0] === '') { re.lastIndex++; continue; } out.push([m.index, m.index + m[0].length]); }
+    return out;
+  }
+
+  function runSearch(keep) {
+    const prevKey = keep && hits[hitIdx] ? pk(hits[hitIdx].path) : null;
+    hits = []; hitMap.clear(); hitIdx = -1;
+    const re = makeMatcher();
+    if (re === null) { $('count').textContent = ''; renderTree(); return; }
+    if (re === undefined) { $('count').textContent = ''; return; }
+    if (statusEl.classList.contains('err') && statusEl.textContent.startsWith('正規表現')) setStatus('');
+    const useK = $('optKey').checked, useV = $('optVal').checked;
+    (function walk(v, path) {
+      const entry = {};
+      const last = path[path.length - 1];
+      if (useK && path.length && !Array.isArray(getAt(path.slice(0, -1)))) { const r = findRanges(String(last), re); if (r.length) entry.key = r; }
+      if (useV && !isCont(v)) { const r = findRanges(valText(v), re); if (r.length) entry.val = r; }
+      if (entry.key || entry.val) { hitMap.set(pk(path), entry); hits.push({ path }); }
+      if (isCont(v)) for (const k of Object.keys(v)) walk(v[k], path.concat(Array.isArray(v) ? Number(k) : k));
+    })(data, []);
+    if (hits.length) {
+      hitIdx = Math.max(0, prevKey ? hits.findIndex(h => pk(h.path) === prevKey) : 0);
+      revealHit();
+    }
+    $('count').textContent = $('q').value ? (hits.length ? `${hitIdx + 1} / ${hits.length}` : '0件') : '';
+    renderTree();
+  }
+  function revealHit() { // expand ancestors of current hit
+    const p = hits[hitIdx].path;
+    for (let i = 0; i < p.length; i++) collapsed.delete(pk(p.slice(0, i)));
+  }
+  function step(d) {
+    if (!hits.length) return;
+    hitIdx = (hitIdx + d + hits.length) % hits.length;
+    revealHit();
+    $('count').textContent = `${hitIdx + 1} / ${hits.length}`;
+    if (view === 'text') showTree();
+    renderTree();
+  }
+
+  // ---------- text view / io ----------
+  function parseText(src) {
+    try { return { ok: true, value: JSON.parse(src) }; }
+    catch (e) {
+      let msg = e.message;
+      const m = /position (\d+)/.exec(msg);
+      if (m) { const pos = +m[1], before = src.slice(0, pos).split('\n'); msg += `(行 ${before.length}, 列 ${before[before.length - 1].length + 1})`; }
+      return { ok: false, message: msg };
+    }
+  }
+  function applyText() { // textarea -> data
+    if (!textDirty) return true;
+    const r = parseText(textEl.value);
+    if (!r.ok) { setStatus('JSONエラー: ' + r.message, true); return false; }
+    undoStack.push(snapshot()); redoStack = [];
+    data = r.value; textDirty = false;
+    renderTree(); runSearch(false); updateButtons();
+    setStatus('');
+    return true;
+  }
+  textEl.addEventListener('input', () => {
+    textDirty = true;
+    const r = parseText(textEl.value);
+    setStatus(r.ok ? 'OK: 有効なJSON' : 'JSONエラー: ' + r.message, !r.ok);
+  });
+
+  function showTree() { if (!applyText()) return; view = 'tree'; treeEl.classList.remove('hidden'); textEl.classList.add('hidden'); $('tabTree').classList.add('on'); $('tabText').classList.remove('on'); }
+  function showText() { view = 'text'; textEl.classList.remove('hidden'); treeEl.classList.add('hidden'); $('tabText').classList.add('on'); $('tabTree').classList.remove('on'); textEl.focus(); }
+  $('tabTree').onclick = showTree;
+  $('tabText').onclick = showText;
+
+  function sortDeep(v) {
+    if (Array.isArray(v)) return v.map(sortDeep);
+    if (isCont(v)) return Object.fromEntries(Object.keys(v).sort().map(k => [k, sortDeep(v[k])]));
+    return v;
+  }
+  $('format').onclick = () => {
+    if (!applyText()) return;
+    commit(() => { if ($('sortKeys').checked) data = sortDeep(data); });
+  };
+  $('indent').onchange = () => { textEl.value = serialize(data); };
+  $('minify').onclick = () => {
+    if (!applyText()) return;
+    textEl.value = serialize(data, 0); textDirty = false; showText();
+    setStatus('圧縮しました(ツリーに戻ると整形されます)');
+  };
+
+  $('open').onclick = () => $('file').click();
+  $('file').onchange = async e => {
+    const f = e.target.files[0]; if (!f) return;
+    const r = parseText(await f.text());
+    e.target.value = '';
+    if (!r.ok) { setStatus(`${f.name}: JSONエラー: ${r.message}`, true); return; }
+    undoStack.push(snapshot()); redoStack = [];
+    data = r.value; fileName = f.name; collapsed.clear();
+    afterChange(); setStatus(`${f.name} を開きました`);
+  };
+  $('save').onclick = () => {
+    if (!applyText()) return;
+    const raw = view === 'text' ? textEl.value : serialize(data);
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([raw], { type: 'application/json' }));
+    a.download = fileName; a.click(); URL.revokeObjectURL(a.href);
+  };
+  $('copy').onclick = async () => {
+    if (!applyText()) return;
+    try { await navigator.clipboard.writeText(serialize(data)); setStatus('コピーしました'); }
+    catch { textEl.select(); document.execCommand('copy'); setStatus('コピーしました'); }
+  };
+  $('undo').onclick = undo; $('redo').onclick = redo;
+
+  // drag & drop
+  addEventListener('dragover', e => e.preventDefault());
+  addEventListener('drop', e => {
+    e.preventDefault();
+    const f = e.dataTransfer.files[0];
+    if (f) { const dt = new DataTransfer(); dt.items.add(f); $('file').files = dt.files; $('file').onchange({ target: $('file') }); }
+  });
+
+  // search wiring
+  $('q').addEventListener('input', () => runSearch(false));
+  for (const id of ['optKey', 'optVal', 'optCase', 'optRe']) $(id).onchange = () => runSearch(false);
+  $('q').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); step(e.shiftKey ? -1 : 1); } });
+  $('next').onclick = () => step(1); $('prev').onclick = () => step(-1);
+
+  addEventListener('keydown', e => {
+    const inField = ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName);
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') { e.preventDefault(); $('q').focus(); $('q').select(); }
+    else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); $('save').click(); }
+    else if (!inField && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); }
+    else if (!inField && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); }
+    else if (e.key === 'F3') { e.preventDefault(); step(e.shiftKey ? -1 : 1); }
+  });
+
+  afterChange();
+})();
+</script>
+</body>
+</html>
