@@ -69,7 +69,7 @@
 <header>
   <h1>JSON Editor</h1>
   <button id="open">開く</button>
-  <input type="file" id="file" accept=".json,application/json,text/plain" class="hidden">
+  <input type="file" id="file" class="hidden">
   <button id="save">保存</button>
   <button id="copy">コピー</button>
   <button id="selAll" title="ドキュメント全体を選択">全選択</button>
@@ -433,13 +433,26 @@
     data = r.value; empty = false; fileName = f.name; collapsed.clear();
     afterChange(); setStatus(`${f.name} を開きました`);
   };
+  // Save under any name (extensionless included): native picker where available, else prompt + download.
+  async function saveFile(raw) {
+    if (window.showSaveFilePicker) {
+      try {
+        const h = await showSaveFilePicker({ suggestedName: fileName });
+        const w = await h.createWritable(); await w.write(raw); await w.close();
+        fileName = h.name; setStatus(`${h.name} を保存しました`); return;
+      } catch (e) { if (e.name === 'AbortError') return; }
+    }
+    const name = prompt('ファイル名(拡張子なしも可)', fileName);
+    if (!name || !name.trim()) return;
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([raw], { type: name.includes('.') ? 'application/json' : 'application/octet-stream' }));
+    a.download = fileName = name.trim(); a.click(); URL.revokeObjectURL(a.href);
+  }
   $('save').onclick = () => {
     if (!applyText()) return;
     if (empty) return setStatus('保存するJSONがありません');
     const raw = view === 'text' ? textEl.value : serialize(data);
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([raw], { type: 'application/json' }));
-    a.download = fileName; a.click(); URL.revokeObjectURL(a.href);
+    saveFile(raw);
   };
   $('copy').onclick = async () => {
     if (!applyText()) return;
